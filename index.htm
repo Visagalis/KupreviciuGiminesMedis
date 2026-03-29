@@ -20,10 +20,9 @@
             color: var(--text-main);
             height: 100vh;
             overflow: hidden;
-            touch-action: none; /* Neleidžia naršyklei slinkti viso puslapio */
+            touch-action: none; 
         }
 
-        /* Viršutinė juosta */
         header {
             position: absolute;
             top: 0;
@@ -43,7 +42,6 @@
         h1 { font-size: 18px; margin: 0; font-weight: 800; letter-spacing: -0.5px;}
         .subtitle { font-size: 11px; color: #7f8c8d; margin-top: 2px;}
 
-        /* Canvas konteineris */
         #viewport {
             width: 100vw;
             height: 100vh;
@@ -51,7 +49,6 @@
         }
         #viewport:active { cursor: grabbing; }
 
-        /* Valdymo mygtukai */
         .ui-overlay {
             position: absolute;
             bottom: 25px;
@@ -76,9 +73,9 @@
             font-weight: bold;
             color: var(--text-main);
             cursor: pointer;
+            user-select: none;
         }
 
-        /* Apžvalgos langas (Modalas) */
         #modal {
             position: fixed;
             top: 0;
@@ -139,25 +136,13 @@
             color: #4a5568;
             margin: 0;
         }
-
-        .tag-unverified {
-            font-size: 11px;
-            background: #fff3e0;
-            color: #d35400;
-            padding: 3px 8px;
-            border-radius: 6px;
-            font-weight: bold;
-            display: inline-block;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-        }
     </style>
 </head>
 <body>
 
 <header>
     <h1>Kuprevičių Giminė</h1>
-    <div class="subtitle">Palieskite asmenį detalesnei informacijai</div>
+    <div class="subtitle">Slinkite, artinkite ir palieskite asmenį</div>
 </header>
 
 <div id="viewport">
@@ -165,18 +150,15 @@
 </div>
 
 <div class="ui-overlay">
-    <button class="btn" onclick="zoom(1.2)">+</button>
-    <button class="btn" onclick="zoom(0.8)">−</button>
+    <button class="btn" onclick="btnZoom(1.2)">+</button>
+    <button class="btn" onclick="btnZoom(0.8)">−</button>
     <button class="btn" onclick="resetView()" style="font-size: 16px;">◎</button>
 </div>
 
-<!-- Modalinis Langas asmens informacijai. Uždarymo funkcija priskirta fonui -->
 <div id="modal" onclick="closeModal(event)">
-    <!-- event.stopPropagation() neleidžia uždaryti lango, kai spaudžiama ant balto turinio -->
     <div class="modal-content" onclick="event.stopPropagation()">
         <div class="modal-header">
             <div>
-                <div id="modal-tags"></div>
                 <h2 id="modal-title">Vardas</h2>
                 <p id="modal-meta">Rolė</p>
             </div>
@@ -193,12 +175,16 @@
     
     let scale = 0.6;
     let offsetX, offsetY;
+    
+    // Interakcijų kintamieji
     let isDragging = false;
+    let isPinching = false;
+    let hasPinched = false;
     let dragStartX, dragStartY;
     let lastX, lastY;
-    let hitboxes = [];
+    let lastPinchDistance = 0;
     
-    // Apsauga nuo dvigubų paspaudimų ("ghost clicks")
+    let hitboxes = [];
     let lastModalOpenTime = 0;
 
     const family = {
@@ -210,8 +196,7 @@
             {
                 name: "Severinas Kuprevičius",
                 meta: "Prosenelis (1862–1935)",
-                details: "Provizorius, ilgametis Šeduvos vaistinės savininkas. Jis buvo bendruomenės šviesuolis, rėmė lietuvybę. [Nepatikrinta] Šeimos pasakojimuose minima, kad jis gyveno JAV, kur sukaupė kapitalą, už kurį vėliau įsigijo didelius žemės ir miškų plotus Krakių miestelyje (Kėdainių r.).",
-                unverified: true,
+                details: "Provizorius, ilgametis Šeduvos vaistinės savininkas. Jis buvo bendruomenės šviesuolis, rėmė lietuvybę. Remiantis giminės istorija, jis gyveno JAV, kur sukaupė kapitalą, už kurį vėliau įsigijo didelius žemės ir miškų plotus Krakių miestelyje (Kėdainių r.).",
                 type: "pharmacy",
                 children: [
                     {
@@ -337,23 +322,14 @@
     }
 
     function openModal(node) {
-        lastModalOpenTime = Date.now(); // Fiksuojame atidarymo laiką
-        
+        lastModalOpenTime = Date.now();
         document.getElementById('modal-title').innerText = node.name;
         document.getElementById('modal-meta').innerText = node.meta;
         document.getElementById('modal-body-text').innerText = node.details;
         
-        const tagsDiv = document.getElementById('modal-tags');
-        if (node.unverified) {
-            tagsDiv.innerHTML = '<span class="tag-unverified">Pateikta jūsų (archyvuose nerasta)</span>';
-        } else {
-            tagsDiv.innerHTML = '';
-        }
-
         const modal = document.getElementById('modal');
         const content = modal.querySelector('.modal-content');
         modal.style.display = 'flex';
-        // setTimeout leidžia pritaikyti CSS tranzicijas po display pakeitimo
         setTimeout(() => {
             modal.style.opacity = '1';
             content.style.transform = 'translateY(0)';
@@ -361,9 +337,7 @@
     }
 
     function closeModal(e, force = false) {
-        // Jei praėjo mažiau nei 400ms nuo atidarymo, ignoruojame "ghost click" įvykius
         if (!force && Date.now() - lastModalOpenTime < 400) return;
-        
         if (e) e.preventDefault();
         const modal = document.getElementById('modal');
         const content = modal.querySelector('.modal-content');
@@ -372,79 +346,169 @@
         setTimeout(() => { modal.style.display = 'none'; }, 300);
     }
 
-    // --- Įvykių valdymas ---
-    
-    function handleStart(x, y) { 
-        isDragging = true; 
-        dragStartX = x; dragStartY = y;
-        lastX = x; lastY = y; 
-    }
-    
-    function handleMove(x, y) {
-        if (!isDragging) return;
-        offsetX += x - lastX;
-        offsetY += y - lastY;
-        lastX = x; lastY = y;
+    // --- Matemetika Priartinimui (Zoom) ---
+    function zoomAtPoint(zoomFactor, x, y) {
+        const newScale = Math.max(0.3, Math.min(scale * zoomFactor, 3));
+        if (newScale === scale) return;
+        
+        // Paskaičiuojame kiek pasikeitė skalė
+        const scaleChange = newScale / scale;
+        
+        // Atnaujiname offsets, kad taškas (x, y) išliktų toje pačioje ekrano vietoje
+        offsetX = x - (x - offsetX) * scaleChange;
+        offsetY = y - (y - offsetY) * scaleChange;
+        
+        scale = newScale;
         draw();
     }
+
+    function btnZoom(f) {
+        // Mygtukais artiname pagal ekrano centrą
+        zoomAtPoint(f, canvas.width / 2, canvas.height / 2);
+    }
+
+    function resetView() { 
+        scale = 0.6; 
+        offsetX = canvas.width / 2; 
+        offsetY = 120; 
+        draw(); 
+    }
+
+    function getDistance(touches) {
+        return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+    }
+
+    function getPinchCenter(touches) {
+        return {
+            x: (touches[0].clientX + touches[1].clientX) / 2,
+            y: (touches[0].clientY + touches[1].clientY) / 2
+        };
+    }
+
+    // --- Touch įvykiai ---
+    viewport.addEventListener('touchstart', (e) => {
+        if (e.target !== canvas && e.target !== viewport) return;
+        
+        if (e.touches.length === 2) {
+            isPinching = true;
+            hasPinched = true;
+            isDragging = false;
+            lastPinchDistance = getDistance(e.touches);
+        } else if (e.touches.length === 1) {
+            isDragging = true;
+            hasPinched = false;
+            lastX = e.touches[0].clientX;
+            lastY = e.touches[0].clientY;
+            dragStartX = lastX;
+            dragStartY = lastY;
+        }
+    }, { passive: false });
     
-    function handleEnd(clientX, clientY) { 
-        isDragging = false; 
+    viewport.addEventListener('touchmove', (e) => { 
+        if (e.target !== canvas && e.target !== viewport) return;
+        e.preventDefault(); 
         
-        const dx = Math.abs(clientX - dragStartX);
-        const dy = Math.abs(clientY - dragStartY);
+        if (isPinching && e.touches.length === 2) {
+            const currentDistance = getDistance(e.touches);
+            const zoomFactor = currentDistance / lastPinchDistance;
+            const center = getPinchCenter(e.touches);
+            
+            zoomAtPoint(zoomFactor, center.x, center.y);
+            
+            lastPinchDistance = currentDistance;
+            hasPinched = true;
+        } else if (isDragging && e.touches.length === 1 && !isPinching) {
+            offsetX += e.touches[0].clientX - lastX;
+            offsetY += e.touches[0].clientY - lastY;
+            lastX = e.touches[0].clientX;
+            lastY = e.touches[0].clientY;
+            draw();
+        }
+    }, { passive: false });
+    
+    viewport.addEventListener('touchend', (e) => {
+        if (e.target !== canvas && e.target !== viewport) return;
+        if (e.cancelable) e.preventDefault(); 
         
-        // Jei pirštas/pelė nepajudėjo daugiau nei 5px – tai paspaudimas (Click)
+        if (e.touches.length < 2) {
+            isPinching = false;
+        }
+        
+        if (e.touches.length === 1) {
+            // Atleidus vieną pirštą, „pagauname“ antrąjį, kad vaizdas nešokinėtų
+            lastX = e.touches[0].clientX;
+            lastY = e.touches[0].clientY;
+            isDragging = true;
+        } else if (e.touches.length === 0) {
+            isDragging = false;
+            
+            // Fiksuojame paspaudimą (click) tik jei nebuvo zoominimo (pinch)
+            if (!hasPinched) {
+                const touch = e.changedTouches[0];
+                const dx = Math.abs(touch.clientX - dragStartX);
+                const dy = Math.abs(touch.clientY - dragStartY);
+                
+                if (dx < 5 && dy < 5) {
+                    const rect = canvas.getBoundingClientRect();
+                    const localX = (touch.clientX - rect.left - offsetX) / scale;
+                    const localY = (touch.clientY - rect.top - offsetY) / scale;
+
+                    for (let i = 0; i < hitboxes.length; i++) {
+                        const box = hitboxes[i];
+                        if (localX >= box.left && localX <= box.right && localY >= box.top && localY <= box.bottom) {
+                            openModal(box.node);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }, { passive: false });
+
+    // --- Mouse įvykiai kompiuteriams ---
+    viewport.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        hasPinched = false;
+        dragStartX = e.clientX; dragStartY = e.clientY;
+        lastX = e.clientX; lastY = e.clientY;
+    });
+    
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        offsetX += e.clientX - lastX;
+        offsetY += e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
+        draw();
+    });
+    
+    window.addEventListener('mouseup', (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        if(Date.now() - lastModalOpenTime < 400) return;
+        
+        const dx = Math.abs(e.clientX - dragStartX);
+        const dy = Math.abs(e.clientY - dragStartY);
+        
         if (dx < 5 && dy < 5) {
             const rect = canvas.getBoundingClientRect();
-            const clickX = clientX - rect.left;
-            const clickY = clientY - rect.top;
-
-            const localX = (clickX - offsetX) / scale;
-            const localY = (clickY - offsetY) / scale;
+            const localX = (e.clientX - rect.left - offsetX) / scale;
+            const localY = (e.clientY - rect.top - offsetY) / scale;
 
             for (let i = 0; i < hitboxes.length; i++) {
-                const box = hitboxes[i];
-                if (localX >= box.left && localX <= box.right && localY >= box.top && localY <= box.bottom) {
-                    openModal(box.node);
+                if (localX >= hitboxes[i].left && localX <= hitboxes[i].right && localY >= hitboxes[i].top && localY <= hitboxes[i].bottom) {
+                    openModal(hitboxes[i].node);
                     break;
                 }
             }
         }
-    }
-
-    // Pritaikyta telefonams (Touch įvykiai)
-    viewport.addEventListener('touchstart', (e) => {
-        // Neleidžiame suveikti, jei liečiami ne canvas elementai
-        if (e.target !== canvas && e.target !== viewport) return;
-        handleStart(e.touches[0].clientX, e.touches[0].clientY);
     });
     
-    viewport.addEventListener('touchmove', (e) => { 
-        if (e.target !== canvas && e.target !== viewport) return;
-        e.preventDefault(); // Svarbu! Neleidžia visam langui skrolinti
-        handleMove(e.touches[0].clientX, e.touches[0].clientY); 
-    });
-    
-    viewport.addEventListener('touchend', (e) => {
-        if (e.target !== canvas && e.target !== viewport) return;
-        // e.preventDefault() blokuoja tuos 'ghost clicks' apie kuriuos kalbėjome
-        if(e.cancelable) e.preventDefault(); 
-        const touch = e.changedTouches[0];
-        handleEnd(touch.clientX, touch.clientY);
-    });
-
-    // Pritaikyta kompiuteriams (Mouse įvykiai)
-    viewport.addEventListener('mousedown', (e) => handleStart(e.clientX, e.clientY));
-    window.addEventListener('mousemove', (e) => handleMove(e.clientX, e.clientY));
-    window.addEventListener('mouseup', (e) => {
-        // Tikriname, ar nebuvome neseniai atidarę modalinio lango (kad neuždarytų)
-        if(Date.now() - lastModalOpenTime < 400) return;
-        handleEnd(e.clientX, e.clientY);
-    });
-
-    function zoom(f) { scale *= f; draw(); }
-    function resetView() { scale = 0.6; offsetX = canvas.width / 2; offsetY = 120; draw(); }
+    // Pelės ratuko priartinimas kompiuteriams - dabar centruoja tiksliai ten, kur yra pelė!
+    viewport.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const zoomDirection = e.deltaY > 0 ? 0.9 : 1.1;
+        zoomAtPoint(zoomDirection, e.clientX, e.clientY);
+    }, { passive: false });
 
     window.addEventListener('resize', init);
     init();
@@ -452,4 +516,5 @@
 
 </body>
 </html>
+
 
