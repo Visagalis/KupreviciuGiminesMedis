@@ -7,9 +7,6 @@
     <style>
         :root {
             --bg-color: #f4f1ea;
-            --card-user: #f3e5f5;
-            --card-music: #e3f2fd;
-            --card-pharmacy: #e8f5e9;
             --text-main: #2c3e50;
         }
 
@@ -23,7 +20,7 @@
             color: var(--text-main);
             height: 100vh;
             overflow: hidden;
-            touch-action: none;
+            touch-action: none; /* Neleidžia naršyklei slinkti viso puslapio */
         }
 
         /* Viršutinė juosta */
@@ -32,19 +29,19 @@
             top: 0;
             left: 0;
             right: 0;
-            height: 60px;
+            height: 65px;
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 0 15px;
             border-bottom: 1px solid #dcd7c9;
             z-index: 10;
         }
 
-        h1 { font-size: 16px; margin: 0; font-weight: 800; letter-spacing: -0.5px; text-align: center;}
-        .subtitle { font-size: 11px; color: #7f8c8d; position: absolute; bottom: 5px; }
+        h1 { font-size: 18px; margin: 0; font-weight: 800; letter-spacing: -0.5px;}
+        .subtitle { font-size: 11px; color: #7f8c8d; margin-top: 2px;}
 
         /* Canvas konteineris */
         #viewport {
@@ -75,7 +72,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 20px;
+            font-size: 22px;
             font-weight: bold;
             color: var(--text-main);
             cursor: pointer;
@@ -88,7 +85,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.4);
+            background: rgba(0, 0, 0, 0.5);
             z-index: 100;
             display: none;
             justify-content: center;
@@ -101,13 +98,13 @@
             width: 100%;
             max-width: 500px;
             background: white;
-            border-radius: 20px 20px 0 0;
+            border-radius: 24px 24px 0 0;
             padding: 25px;
             transform: translateY(100%);
             transition: transform 0.3s cubic-bezier(0.1, 0.8, 0.2, 1);
             max-height: 85vh;
             overflow-y: auto;
-            box-shadow: 0 -5px 20px rgba(0,0,0,0.15);
+            box-shadow: 0 -5px 25px rgba(0,0,0,0.2);
         }
 
         .modal-header {
@@ -125,9 +122,9 @@
         .close-btn {
             background: #f1f2f6;
             border: none;
-            width: 32px;
-            height: 32px;
-            border-radius: 16px;
+            width: 34px;
+            height: 34px;
+            border-radius: 17px;
             font-size: 18px;
             display: flex;
             align-items: center;
@@ -139,7 +136,7 @@
         #modal-body-text {
             font-size: 15px;
             line-height: 1.6;
-            color: #57606f;
+            color: #4a5568;
             margin: 0;
         }
 
@@ -160,7 +157,7 @@
 
 <header>
     <h1>Kuprevičių Giminė</h1>
-    <div class="subtitle">Palieskite asmenį, kad sužinotumėte daugiau</div>
+    <div class="subtitle">Palieskite asmenį detalesnei informacijai</div>
 </header>
 
 <div id="viewport">
@@ -170,11 +167,12 @@
 <div class="ui-overlay">
     <button class="btn" onclick="zoom(1.2)">+</button>
     <button class="btn" onclick="zoom(0.8)">−</button>
-    <button class="btn" onclick="resetView()" style="font-size: 14px;">◎</button>
+    <button class="btn" onclick="resetView()" style="font-size: 16px;">◎</button>
 </div>
 
-<!-- Modalinis Langas asmens informacijai -->
+<!-- Modalinis Langas asmens informacijai. Uždarymo funkcija priskirta fonui -->
 <div id="modal" onclick="closeModal(event)">
+    <!-- event.stopPropagation() neleidžia uždaryti lango, kai spaudžiama ant balto turinio -->
     <div class="modal-content" onclick="event.stopPropagation()">
         <div class="modal-header">
             <div>
@@ -182,7 +180,7 @@
                 <h2 id="modal-title">Vardas</h2>
                 <p id="modal-meta">Rolė</p>
             </div>
-            <button class="close-btn" onclick="closeModal(event)">✕</button>
+            <button class="close-btn" onclick="closeModal(event, true)">✕</button>
         </div>
         <p id="modal-body-text">Išsami informacija.</p>
     </div>
@@ -193,17 +191,16 @@
     const ctx = canvas.getContext('2d');
     const viewport = document.getElementById('viewport');
     
-    // Transformacijos kintamieji
     let scale = 0.6;
     let offsetX, offsetY;
     let isDragging = false;
     let dragStartX, dragStartY;
     let lastX, lastY;
-    
-    // Masyvas, kuriame saugosime langelių koordinates, kad galėtume reaguoti į paspaudimus
     let hitboxes = [];
+    
+    // Apsauga nuo dvigubų paspaudimų ("ghost clicks")
+    let lastModalOpenTime = 0;
 
-    // Giminės duomenys su detalia informacija
     const family = {
         name: "Juozapas ir Ona Kuprevičiai",
         meta: "Proproseneliai (Pradininkai)",
@@ -213,29 +210,29 @@
             {
                 name: "Severinas Kuprevičius",
                 meta: "Prosenelis (1862–1935)",
-                details: "Provizorius (aukščiausios kvalifikacijos vaistininkas), ilgametis Šeduvos vaistinės savininkas. Jis buvo bendruomenės šviesuolis, rėmė lietuvybę. [Nepatikrinta] Šeimos pasakojimuose minima, kad jis gyveno JAV, kur sukaupė kapitalą, už kurį vėliau įsigijo didelius žemės ir miškų plotus Krakių miestelyje (Kėdainių r.).",
+                details: "Provizorius, ilgametis Šeduvos vaistinės savininkas. Jis buvo bendruomenės šviesuolis, rėmė lietuvybę. [Nepatikrinta] Šeimos pasakojimuose minima, kad jis gyveno JAV, kur sukaupė kapitalą, už kurį vėliau įsigijo didelius žemės ir miškų plotus Krakių miestelyje (Kėdainių r.).",
                 unverified: true,
                 type: "pharmacy",
                 children: [
                     {
                         name: "Julius Kuprys",
                         meta: "Diedukas",
-                        details: "Jūsų senelis. Severino Kuprevičiaus sūnus. Tarpukariu, vyraujant patriotiniam judėjimui, priėmė sprendimą sulietuvinti savo pavardę iš „Kuprevičius“ į „Kuprys“.",
+                        details: "Jūsų senelis. Severino Kuprevičiaus sūnus. Tarpukariu priėmė sprendimą sulietuvinti savo pavardę iš „Kuprevičius“ į „Kuprys“.",
                         type: "user",
                         children: [
                             {
                                 name: "Robertas Kuprys",
                                 meta: "Tėvas",
-                                details: "Jūsų tėvas. Tiesioginis Severino ir Juliaus linijos tęsėjas, išsaugojęs lietuvintą pavardę.",
+                                details: "Jūsų tėvas. Tiesioginis Severino ir Juliaus linijos tęsėjas.",
                                 type: "user",
-                                children: [{ name: "Jūs", meta: "Aš", details: "Šio giminės medžio tyrinėtojas ir archyvų puoselėtojas.", type: "user" }]
+                                children: [{ name: "Jūs", meta: "Aš", details: "Šio giminės medžio tyrinėtojas.", type: "user" }]
                             }
                         ]
                     },
                     { 
                         name: "Kiti Severino vaikai", 
                         meta: "Alina, Algirdas, Gediminas...", 
-                        details: "Jūsų dieduko Juliaus broliai ir seserys. Iš viso Severinas turėjo didelę šeimą – istoriniuose šaltiniuose minima, kad augino net 10 vaikų. Tarp jų buvo Severinas jaunesnysis, Sofija ir kiti.",
+                        details: "Jūsų dieduko Juliaus broliai ir seserys. Iš viso Severinas turėjo didelę šeimą – apie 10 vaikų. Tarp jų buvo Severinas jaunesnysis, Sofija ir kiti.",
                         type: "pharmacy" 
                     }
                 ]
@@ -243,19 +240,19 @@
             {
                 name: "Mykolas Kuprevičius",
                 meta: "Prosenelio brolis (1864–1932)",
-                details: "Žymus kompozitorius ir vargonininkas. Studijavo Maskvos konservatorijoje. Gyveno JAV (1912–1923 m.), kur vadovavo išeivių chorams. Jis yra pirmųjų lietuviškų operetių („Kūmutės“, „Gudri našlė“) autorius.",
+                details: "Žymus kompozitorius ir vargonininkas. Pirmųjų lietuviškų operetių („Kūmutės“, „Gudri našlė“) autorius. Gyveno JAV.",
                 type: "music",
                 children: [
                     {
                         name: "Viktoras Kuprevičius",
                         meta: "Dieduko pusbrolis (1901–1992)",
-                        details: "Kompozitorius, nusipelnęs meno veikėjas. Jis laikomas Kauno kariliono (varpų muzikos Vytauto Didžiojo karo muziejaus bokšte) tradicijos išsaugotoju ir atgaivintoju po Antrojo pasaulinio karo.",
+                        details: "Kompozitorius, nusipelnęs meno veikėjas. Kauno kariliono tradicijos išsaugotojas.",
                         type: "music",
                         children: [
                             { 
                                 name: "Giedrius Kuprevičius", 
                                 meta: "Giminaitis (g. 1944)", 
-                                details: "Viktoro sūnus. Vienas žymiausių šiuolaikinių Lietuvos kompozitorių, Lietuvos nacionalinės kultūros ir meno premijos laureatas. Operos „Prūsai“ ir miuziklo „Ugnies medžioklė su varovais“ autorius.",
+                                details: "Viktoro sūnus. Žymiausias Lietuvos kompozitorius, Nacionalinės premijos laureatas.",
                                 type: "music" 
                             }
                         ]
@@ -265,7 +262,7 @@
             {
                 name: "Povilas Kuprevičius",
                 meta: "Prosenelio brolis (1866–1943)",
-                details: "Trečiasis brolis, taip pat pasirinkęs medicinos kelią. Jis buvo provizorius ir turėjo vieną moderniausių to meto vaistinių Panevėžyje (Laisvės aikštėje).",
+                details: "Provizorius. Turėjo vieną moderniausių to meto vaistinių Panevėžyje.",
                 type: "pharmacy"
             }
         ]
@@ -275,15 +272,13 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
         offsetX = canvas.width / 2;
-        offsetY = 100;
+        offsetY = 120;
         draw();
     }
 
-    // Piešimo funkcija su paspaudimų zonų fiksavimu
     function drawNode(node, x, y, spread) {
         const w = 150, h = 55;
         
-        // Išsaugome langelio koordinates, kad žinotume, kur naudotojas paspaudė
         hitboxes.push({
             node: node,
             left: x - w/2,
@@ -292,21 +287,17 @@
             bottom: y + h
         });
 
-        // Spalvų nustatymai
         if (node.type === "root") { ctx.fillStyle = "#fff9c4"; ctx.strokeStyle = "#fbc02d"; }
         else if (node.type === "music") { ctx.fillStyle = "#e3f2fd"; ctx.strokeStyle = "#2196f3"; }
         else if (node.type === "pharmacy") { ctx.fillStyle = "#e8f5e9"; ctx.strokeStyle = "#4caf50"; }
         else { ctx.fillStyle = "#f3e5f5"; ctx.strokeStyle = "#6c5ce7"; }
 
-        // Linija ir dėžutė
-        ctx.strokeStyle = ctx.strokeStyle;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.roundRect(x - w/2, y, w, h, 8);
         ctx.fill();
         ctx.stroke();
 
-        // Tekstas
         ctx.fillStyle = "#2c3e50";
         ctx.font = "bold 12px sans-serif";
         ctx.textAlign = "center";
@@ -315,7 +306,6 @@
         ctx.fillStyle = "#7f8c8d";
         ctx.fillText(node.meta, x, y + 42);
 
-        // Vaikų elementų piešimas
         if (node.children) {
             const childY = y + 120;
             const childSpread = spread * 0.7;
@@ -323,8 +313,6 @@
 
             node.children.forEach((child, i) => {
                 const childX = node.children.length === 1 ? x : startX + i * childSpread;
-                
-                // Jungiamoji linija
                 ctx.beginPath();
                 ctx.strokeStyle = "#cbd5e1";
                 ctx.moveTo(x, y + h);
@@ -339,7 +327,7 @@
     }
 
     function draw() {
-        hitboxes = []; // Išvalome senas koordinates prieš kiekvieną piešimą
+        hitboxes = [];
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.save();
         ctx.translate(offsetX, offsetY);
@@ -348,15 +336,16 @@
         ctx.restore();
     }
 
-    // Modalinis langas
     function openModal(node) {
+        lastModalOpenTime = Date.now(); // Fiksuojame atidarymo laiką
+        
         document.getElementById('modal-title').innerText = node.name;
         document.getElementById('modal-meta').innerText = node.meta;
         document.getElementById('modal-body-text').innerText = node.details;
         
         const tagsDiv = document.getElementById('modal-tags');
         if (node.unverified) {
-            tagsDiv.innerHTML = '<span class="tag-unverified">Yra Nepatikrintų Faktų</span>';
+            tagsDiv.innerHTML = '<span class="tag-unverified">Pateikta jūsų (archyvuose nerasta)</span>';
         } else {
             tagsDiv.innerHTML = '';
         }
@@ -364,14 +353,18 @@
         const modal = document.getElementById('modal');
         const content = modal.querySelector('.modal-content');
         modal.style.display = 'flex';
+        // setTimeout leidžia pritaikyti CSS tranzicijas po display pakeitimo
         setTimeout(() => {
             modal.style.opacity = '1';
             content.style.transform = 'translateY(0)';
         }, 10);
     }
 
-    function closeModal(e) {
-        if(e) e.preventDefault();
+    function closeModal(e, force = false) {
+        // Jei praėjo mažiau nei 400ms nuo atidarymo, ignoruojame "ghost click" įvykius
+        if (!force && Date.now() - lastModalOpenTime < 400) return;
+        
+        if (e) e.preventDefault();
         const modal = document.getElementById('modal');
         const content = modal.querySelector('.modal-content');
         modal.style.opacity = '0';
@@ -379,7 +372,8 @@
         setTimeout(() => { modal.style.display = 'none'; }, 300);
     }
 
-    // Paspaudimų ir tempimo logika
+    // --- Įvykių valdymas ---
+    
     function handleStart(x, y) { 
         isDragging = true; 
         dragStartX = x; dragStartY = y;
@@ -397,20 +391,18 @@
     function handleEnd(clientX, clientY) { 
         isDragging = false; 
         
-        // Jei pelė/pirštas nepajudėjo daugiau nei 5px, tai reiškia, kad buvo paspaudimas (Click)
         const dx = Math.abs(clientX - dragStartX);
         const dy = Math.abs(clientY - dragStartY);
         
+        // Jei pirštas/pelė nepajudėjo daugiau nei 5px – tai paspaudimas (Click)
         if (dx < 5 && dy < 5) {
             const rect = canvas.getBoundingClientRect();
             const clickX = clientX - rect.left;
             const clickY = clientY - rect.top;
 
-            // Konvertuojame ekrano koordinates į lokalias Canvas koordinates
             const localX = (clickX - offsetX) / scale;
             const localY = (clickY - offsetY) / scale;
 
-            // Tikriname ar pataikėme į kurį nors langelį
             for (let i = 0; i < hitboxes.length; i++) {
                 const box = hitboxes[i];
                 if (localX >= box.left && localX <= box.right && localY >= box.top && localY <= box.bottom) {
@@ -421,21 +413,38 @@
         }
     }
 
-    // Touch įvykiai (telefonams)
-    viewport.addEventListener('touchstart', (e) => handleStart(e.touches[0].clientX, e.touches[0].clientY));
-    viewport.addEventListener('touchmove', (e) => { e.preventDefault(); handleMove(e.touches[0].clientX, e.touches[0].clientY); });
+    // Pritaikyta telefonams (Touch įvykiai)
+    viewport.addEventListener('touchstart', (e) => {
+        // Neleidžiame suveikti, jei liečiami ne canvas elementai
+        if (e.target !== canvas && e.target !== viewport) return;
+        handleStart(e.touches[0].clientX, e.touches[0].clientY);
+    });
+    
+    viewport.addEventListener('touchmove', (e) => { 
+        if (e.target !== canvas && e.target !== viewport) return;
+        e.preventDefault(); // Svarbu! Neleidžia visam langui skrolinti
+        handleMove(e.touches[0].clientX, e.touches[0].clientY); 
+    });
+    
     viewport.addEventListener('touchend', (e) => {
+        if (e.target !== canvas && e.target !== viewport) return;
+        // e.preventDefault() blokuoja tuos 'ghost clicks' apie kuriuos kalbėjome
+        if(e.cancelable) e.preventDefault(); 
         const touch = e.changedTouches[0];
         handleEnd(touch.clientX, touch.clientY);
     });
 
-    // Mouse įvykiai (kompiuteriams)
+    // Pritaikyta kompiuteriams (Mouse įvykiai)
     viewport.addEventListener('mousedown', (e) => handleStart(e.clientX, e.clientY));
     window.addEventListener('mousemove', (e) => handleMove(e.clientX, e.clientY));
-    window.addEventListener('mouseup', (e) => handleEnd(e.clientX, e.clientY));
+    window.addEventListener('mouseup', (e) => {
+        // Tikriname, ar nebuvome neseniai atidarę modalinio lango (kad neuždarytų)
+        if(Date.now() - lastModalOpenTime < 400) return;
+        handleEnd(e.clientX, e.clientY);
+    });
 
     function zoom(f) { scale *= f; draw(); }
-    function resetView() { scale = 0.6; offsetX = canvas.width / 2; offsetY = 100; draw(); }
+    function resetView() { scale = 0.6; offsetX = canvas.width / 2; offsetY = 120; draw(); }
 
     window.addEventListener('resize', init);
     init();
